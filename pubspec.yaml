@@ -1,0 +1,25 @@
+name: osm_routing_app
+description: A new Flutter project with OSM and routing
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  latlong2: ^0.9.1
+  http: ^1.3.0
+  flutter_map: ^8.1.0
+  geolocator: ^13.0.2
+  flutter_map_cancellable_tile_provider: ^3.1.0
+
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+
+flutter:
+  uses-material-design: true
