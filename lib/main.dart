@@ -40,12 +40,15 @@ class _MapScreenState extends State<MapScreen> {
   List<LatLng> routePoints = [];
   LatLng? startPoint;
   LatLng? endPoint;
+  // Nuova variabile per la posizione attuale dell'utente
+  LatLng? currentUserLocation;
   TextEditingController startController = TextEditingController();
   TextEditingController endController = TextEditingController();
   List<Map<String, dynamic>> startSuggestions = [];
   List<Map<String, dynamic>> endSuggestions = [];
   List<LatLng> obstacles = []; // Lista per segnalare ostacoli
 
+  // Funzione per la ricerca delle località tramite Nominatim
   Future<void> _searchLocation(String query, bool isStart) async {
     if (query.isEmpty) return;
     final url = Uri.parse(
@@ -65,6 +68,7 @@ class _MapScreenState extends State<MapScreen> {
     }
   }
 
+  // Seleziona la località scelta dalla ricerca e aggiorna lo stato
   void _selectLocation(Map<String, dynamic> location, bool isStart) {
     double lat = double.parse(location['lat']);
     double lon = double.parse(location['lon']);
@@ -81,13 +85,14 @@ class _MapScreenState extends State<MapScreen> {
     });
   }
 
+  // Funzione per il calcolo del percorso utilizzando OSRM
   Future<void> _calculateRoute() async {
     if (startPoint == null || endPoint == null) return;
     final url = Uri.parse(
-      'https://router.project-osrm.org/route/v1/driving/'
-      '${startPoint!.longitude},${startPoint!.latitude};'
-      '${endPoint!.longitude},${endPoint!.latitude}'
-      '?overview=full&geometries=geojson',
+      'https://router.project-osrm.org/route/v1/walking/'
+          '${startPoint!.longitude},${startPoint!.latitude};'
+          '${endPoint!.longitude},${endPoint!.latitude}'
+          '?overview=full&geometries=geojson',
     );
     try {
       print("Fetching route from: $url");
@@ -116,12 +121,14 @@ class _MapScreenState extends State<MapScreen> {
     }
   }
 
+  // Aggiunge un ostacolo dove si tocca la mappa
   void _addObstacle(LatLng point) {
     setState(() {
       obstacles.add(point);
     });
   }
 
+  // Funzioni per lo zoom
   void _zoomIn() {
     setState(() {
       currentZoom += 1;
@@ -136,6 +143,7 @@ class _MapScreenState extends State<MapScreen> {
     });
   }
 
+  // Ottiene la posizione attuale e aggiorna la mappa e il marker della posizione corrente
   Future<void> _getCurrentLocation() async {
     bool serviceEnabled;
     LocationPermission permission;
@@ -157,7 +165,13 @@ class _MapScreenState extends State<MapScreen> {
       desiredAccuracy: LocationAccuracy.high,
     );
 
-    _mapController.move(LatLng(position.latitude, position.longitude), 15);
+    // Aggiornamento della posizione attuale dell'utente
+    setState(() {
+      currentUserLocation = LatLng(position.latitude, position.longitude);
+    });
+
+    // Sposta la mappa sulla posizione attuale
+    _mapController.move(currentUserLocation!, 15);
   }
 
   @override
@@ -166,6 +180,7 @@ class _MapScreenState extends State<MapScreen> {
       appBar: AppBar(title: const Text('OSM Routing App')),
       body: Column(
         children: [
+          // Sezione per la ricerca delle località
           Padding(
             padding: const EdgeInsets.all(8.0),
             child: Column(
@@ -173,23 +188,23 @@ class _MapScreenState extends State<MapScreen> {
                 TextField(
                   controller: startController,
                   decoration:
-                      const InputDecoration(labelText: 'Punto di partenza'),
+                  const InputDecoration(labelText: 'Punto di partenza'),
                   onChanged: (value) => _searchLocation(value, true),
                 ),
                 ...startSuggestions.map((s) => ListTile(
-                      title: Text(s['display_name']),
-                      onTap: () => _selectLocation(s, true),
-                    )),
+                  title: Text(s['display_name']),
+                  onTap: () => _selectLocation(s, true),
+                )),
                 TextField(
                   controller: endController,
                   decoration:
-                      const InputDecoration(labelText: 'Punto di arrivo'),
+                  const InputDecoration(labelText: 'Punto di arrivo'),
                   onChanged: (value) => _searchLocation(value, false),
                 ),
                 ...endSuggestions.map((s) => ListTile(
-                      title: Text(s['display_name']),
-                      onTap: () => _selectLocation(s, false),
-                    )),
+                  title: Text(s['display_name']),
+                  onTap: () => _selectLocation(s, false),
+                )),
                 ElevatedButton(
                   onPressed: _calculateRoute,
                   child: const Text("Calcola Percorso"),
@@ -210,9 +225,24 @@ class _MapScreenState extends State<MapScreen> {
                   children: [
                     TileLayer(
                       urlTemplate:
-                          'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+                      'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
                       subdomains: ['a', 'b', 'c'],
                     ),
+                    // Marker per la posizione attuale dell'utente
+                    if (currentUserLocation != null)
+                      MarkerLayer(
+                        markers: [
+                          Marker(
+                            point: currentUserLocation!,
+                            width: 40,
+                            height: 40,
+                            // Icona scelta: person_pin_circle blu
+                            child: const Icon(Icons.person_pin_circle,
+                                color: Colors.blue, size: 40),
+                          ),
+                        ],
+                      ),
+                    // Marker per il punto di partenza
                     if (startPoint != null)
                       MarkerLayer(
                         markers: [
@@ -225,6 +255,7 @@ class _MapScreenState extends State<MapScreen> {
                           ),
                         ],
                       ),
+                    // Marker per il punto di arrivo
                     if (endPoint != null)
                       MarkerLayer(
                         markers: [
@@ -237,6 +268,7 @@ class _MapScreenState extends State<MapScreen> {
                           ),
                         ],
                       ),
+                    // Layer per la visualizzazione del percorso
                     if (routePoints.isNotEmpty)
                       PolylineLayer(
                         polylines: [
@@ -247,20 +279,21 @@ class _MapScreenState extends State<MapScreen> {
                           ),
                         ],
                       ),
+                    // Layer per gli ostacoli
                     MarkerLayer(
                       markers: obstacles
                           .map((point) => Marker(
-                                point: point,
-                                width: 40,
-                                height: 40,
-                                child: const Icon(Icons.warning,
-                                    color: Colors.orange, size: 40),
-                              ))
+                        point: point,
+                        width: 40,
+                        height: 40,
+                        child: const Icon(Icons.warning,
+                            color: Colors.orange, size: 40),
+                      ))
                           .toList(),
                     ),
                   ],
                 ),
-                // Pulsanti zoom e geolocalizzazione
+                // Pulsanti per lo zoom
                 Positioned(
                   left: 10,
                   bottom: 100,
@@ -282,6 +315,7 @@ class _MapScreenState extends State<MapScreen> {
                     ],
                   ),
                 ),
+                // Pulsante per la geolocalizzazione
                 Positioned(
                   right: 10,
                   bottom: 100,
