@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:html' as html;
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
@@ -51,7 +52,22 @@ class _MapScreenState extends State<MapScreen> {
   @override
   void initState() {
     super.initState();
-    _loadObstacles(); // Carica ostacoli salvati all'avvio
+    _loadObstacles(); // Carico gli ostacoli salvati all'avvio
+
+    // Ascolta gli eventi di storage provenienti da altre tab
+    html.window.onStorage.listen((html.StorageEvent event) {
+      // Controlla che sia una chiave "obstacle_" (o il contatore)
+      if (event.key != null && event.key!.startsWith('obstacle_')) {
+        // Puoi fare un debug log per capire se l'evento arriva
+        print('Storage event catturato in questa tab: ${event.key}, oldValue=${event.oldValue}, newValue=${event.newValue}');
+
+        // Ricarico tutti gli ostacoli per riflettere lo stato attuale
+        _loadObstacles();
+      } else if (event.key == 'obstacle_counter') {
+        // Se hai cambiato il contatore, potresti voler aggiornare comunque
+        _loadObstacles();
+      }
+    });
   }
 
   // Salva un ostacolo con una key progressiva unica
@@ -66,13 +82,18 @@ class _MapScreenState extends State<MapScreen> {
     await prefs.setInt('obstacle_counter', counter + 1);
   }
 
-  // Carico tutti gli ostacoli salvati con le key che iniziano con "obstacle_"
+  // Funzione che "disegna" (aggiunge) un ostacolo senza salvare nuovamente
+  void _drawObstacle(LatLng point) {
+    setState(() {
+      obstacles.add(point);
+    });
+  }
+
+  // Carica tutti gli ostacoli
   Future<void> _loadObstacles() async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
     Set<String> keys = prefs.getKeys();
-    // Seleziono tutte le chiavi che corrispondono al pattern desiderato
     List<String> obstacleKeys = keys.where((key) => key.startsWith('obstacle_')).toList();
-    // Ordino le chiavi in base al numero progressivo
     obstacleKeys.sort((a, b) {
       int aNum = int.parse(a.split('_')[1]);
       int bNum = int.parse(b.split('_')[1]);
@@ -90,6 +111,7 @@ class _MapScreenState extends State<MapScreen> {
       obstacles = loadedObstacles;
     });
   }
+
 
   // Funzione per cercare una località tramite Nominatim
   Future<void> _searchLocation(String query, bool isStart) async {
