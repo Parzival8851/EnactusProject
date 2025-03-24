@@ -4,6 +4,7 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:http/http.dart' as http;
 import 'package:geolocator/geolocator.dart';
+import 'package:shared_preferences/shared_preferences.dart'; // Import necessario
 import 'package:flutter_map_cancellable_tile_provider/flutter_map_cancellable_tile_provider.dart';
 
 void main() {
@@ -34,13 +35,12 @@ class MapScreen extends StatefulWidget {
 
 class _MapScreenState extends State<MapScreen> {
   final MapController _mapController = MapController();
-  bool addingObstacle = false;
   double currentZoom = 13.0;
   LatLng currentCenter = LatLng(45.4642, 9.1900);
   List<LatLng> routePoints = [];
   LatLng? startPoint;
   LatLng? endPoint;
-  // Nuova variabile per la posizione attuale dell'utente
+  // Variabile per la posizione attuale dell'utente
   LatLng? currentUserLocation;
   TextEditingController startController = TextEditingController();
   TextEditingController endController = TextEditingController();
@@ -48,7 +48,50 @@ class _MapScreenState extends State<MapScreen> {
   List<Map<String, dynamic>> endSuggestions = [];
   List<LatLng> obstacles = []; // Lista per segnalare ostacoli
 
-  // Funzione per la ricerca delle località tramite Nominatim
+  @override
+  void initState() {
+    super.initState();
+    _loadObstacles(); // Carica ostacoli salvati all'avvio
+  }
+
+  // Salva un ostacolo con una key progressiva unica
+  Future<void> _saveObstacle(LatLng point) async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    // Leggo il contatore corrente, se non esiste lo inizializzo a 0
+    int counter = prefs.getInt('obstacle_counter') ?? 0;
+    String key = 'obstacle_$counter';
+    // Salvo l'ostacolo come JSON
+    await prefs.setString(key, jsonEncode({'lat': point.latitude, 'lng': point.longitude}));
+    // Aggiorno il contatore per il prossimo ostacolo
+    await prefs.setInt('obstacle_counter', counter + 1);
+  }
+
+  // Carico tutti gli ostacoli salvati con le key che iniziano con "obstacle_"
+  Future<void> _loadObstacles() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    Set<String> keys = prefs.getKeys();
+    // Seleziono tutte le chiavi che corrispondono al pattern desiderato
+    List<String> obstacleKeys = keys.where((key) => key.startsWith('obstacle_')).toList();
+    // Ordino le chiavi in base al numero progressivo
+    obstacleKeys.sort((a, b) {
+      int aNum = int.parse(a.split('_')[1]);
+      int bNum = int.parse(b.split('_')[1]);
+      return aNum.compareTo(bNum);
+    });
+    List<LatLng> loadedObstacles = [];
+    for (String key in obstacleKeys) {
+      String? value = prefs.getString(key);
+      if (value != null) {
+        Map<String, dynamic> map = jsonDecode(value);
+        loadedObstacles.add(LatLng(map['lat'], map['lng']));
+      }
+    }
+    setState(() {
+      obstacles = loadedObstacles;
+    });
+  }
+
+  // Funzione per cercare una località tramite Nominatim
   Future<void> _searchLocation(String query, bool isStart) async {
     if (query.isEmpty) return;
     final url = Uri.parse(
@@ -68,7 +111,7 @@ class _MapScreenState extends State<MapScreen> {
     }
   }
 
-  // Seleziona la località scelta dalla ricerca e aggiorna lo stato
+  // Selezione della località dalla lista dei risultati
   void _selectLocation(Map<String, dynamic> location, bool isStart) {
     double lat = double.parse(location['lat']);
     double lon = double.parse(location['lon']);
@@ -85,7 +128,7 @@ class _MapScreenState extends State<MapScreen> {
     });
   }
 
-  // Funzione per il calcolo del percorso utilizzando OSRM
+  // Calcolo del percorso tramite OSRM
   Future<void> _calculateRoute() async {
     if (startPoint == null || endPoint == null) return;
     final url = Uri.parse(
@@ -121,11 +164,12 @@ class _MapScreenState extends State<MapScreen> {
     }
   }
 
-  // Aggiunge un ostacolo dove si tocca la mappa
+  // Aggiunge un ostacolo e lo salva come entry separata
   void _addObstacle(LatLng point) {
     setState(() {
       obstacles.add(point);
     });
+    _saveObstacle(point);
   }
 
   // Funzioni per lo zoom
@@ -143,7 +187,7 @@ class _MapScreenState extends State<MapScreen> {
     });
   }
 
-  // Ottiene la posizione attuale e aggiorna la mappa e il marker della posizione corrente
+  // Ottieni la posizione attuale e aggiorna il marker
   Future<void> _getCurrentLocation() async {
     bool serviceEnabled;
     LocationPermission permission;
@@ -162,15 +206,12 @@ class _MapScreenState extends State<MapScreen> {
     }
 
     Position position = await Geolocator.getCurrentPosition(
-      desiredAccuracy: LocationAccuracy.high,
+      desiredAccuracy: LocationAccuracy.best,
     );
 
-    // Aggiornamento della posizione attuale dell'utente
     setState(() {
       currentUserLocation = LatLng(position.latitude, position.longitude);
     });
-
-    // Sposta la mappa sulla posizione attuale
     _mapController.move(currentUserLocation!, 15);
   }
 
@@ -236,7 +277,6 @@ class _MapScreenState extends State<MapScreen> {
                             point: currentUserLocation!,
                             width: 40,
                             height: 40,
-                            // Icona scelta: person_pin_circle blu
                             child: const Icon(Icons.person_pin_circle,
                                 color: Colors.blue, size: 40),
                           ),
@@ -268,7 +308,7 @@ class _MapScreenState extends State<MapScreen> {
                           ),
                         ],
                       ),
-                    // Layer per la visualizzazione del percorso
+                    // Layer per il percorso
                     if (routePoints.isNotEmpty)
                       PolylineLayer(
                         polylines: [
